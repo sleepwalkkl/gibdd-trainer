@@ -161,7 +161,8 @@ function renderExamResult() {
   app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' +
     (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + mistakes.length +
     '. Время: ' + Math.floor(elapsed/60) + ' мин ' + elapsed%60 + ' с.</p>' +
-    button('К режимам','home') + ' ' + button('Мои ошибки','exam-mistakes','quiet') + '</section>';
+    button('К режимам','home') + ' ' + button('Мои ошибки','exam-mistakes','quiet') + ' ' +
+    button('Посмотреть экзамен','attempt-' + (state.history.length-1),'quiet') + '</section>';
 }
 function questionReview(id, picked) {
   const q = find(id);
@@ -181,18 +182,37 @@ function renderHistory() {
   app.innerHTML = '<h1>История экзаменов</h1>' + button('К режимам','home','quiet') +
     (entries.length ? '<ul class="attempt-list">' + entries.join('') + '</ul>' : '<p>Здесь появятся завершённые экзамены.</p>');
 }
-function renderAttempt(index) {
+function renderAttempt(index, position = 0) {
   const entry = state.history[index];
-  const cards = entry.questions.map(({id, picked, assessed}, position) => {
-    const q = find(id);
-    const status = !assessed ? 'Не оценивался' : picked === null ? 'Пропущен' : picked === q.correct ? 'Верно' : 'Ошибка';
-    return '<details><summary>' + (position >= 20 ? 'Дополнительный вопрос ' + (position-19) : 'Вопрос ' + (position+1)) +
-      ' · ' + status + ' · ' + esc(q.question) + '</summary><p>Билет ' + q.ticket + ' · вопрос ' + q.number +
-      '</p>' + (assessed ? questionReview(id,picked) : '<p>Ответа нет. Экзамен закончился досрочно.</p>') + '</details>';
-  });
-  app.innerHTML = '<h1>Попытка ' + (index+1) + '</h1><p>' + esc(new Date(entry.at).toLocaleString('ru-RU')) +
-    ' · ' + (entry.passed ? 'Сдал' : 'Не сдал') + ' · ошибок и пропусков: ' + entry.errors + '</p>' +
-    button('К истории','history','quiet') + ' ' + button('К режимам','home','quiet') + cards.join('');
+  const {id, picked, assessed} = entry.questions[position];
+  const q = find(id);
+  const total = entry.questions.length;
+  const action = number => 'attempt-' + index + '-' + number;
+  const status = !assessed ? 'Не оценивался' : picked === null ? 'Пропущен' : picked === q.correct ? 'Верно' : 'Ошибка';
+  const options = q.answers.map((answer, i) => {
+    const labels = [];
+    if (i === picked) labels.push('Ваш ответ');
+    if (i === q.correct) labels.push('Правильный ответ');
+    const color = i === q.correct ? ' correct' : i === picked ? ' wrong' : '';
+    return '<div class="answer' + color + '"><span class="letter">' + (i+1) + '</span><span>' +
+      esc(answer) + (labels.length ? '<br><strong>' + labels.join(' · ') + '</strong>' : '') + '</span></div>';
+  }).join('');
+  const numbers = entry.questions.map((_, i) =>
+    '<button class="dot' + (i === position ? ' active' : '') + '" aria-label="Вопрос ' + (i+1) + '"' +
+    (i === position ? ' aria-current="step"' : '') + ' data-action="' + action(i) + '">' + (i+1) + '</button>'
+  ).join('');
+  app.innerHTML = '<section class="question"><div class="row"><span class="eyebrow">Попытка ' + (index+1) +
+    ' · ' + (entry.passed ? 'Сдал' : 'Не сдал') + '</span>' + button('К истории','history','quiet') +
+    '</div><nav class="navigation" aria-label="Вопросы экзамена">' + numbers + '</nav><p>Вопрос ' +
+    (position+1) + ' из ' + total + (position >= 20 ? ' · Дополнительный блок' : '') + ' · ' + status +
+    '</p><p class="muted">Билет ' + q.ticket + ' · вопрос ' + q.number + '</p><h1>' + esc(q.question) + '</h1>' +
+    (q.image ? '<img class="scene" src="./' + esc(q.image) + '" alt="Дорожная ситуация к вопросу">' : '') +
+    '<div class="answers">' + options + '</div>' +
+    (assessed && picked !== q.correct ? '<section class="explanation"><h2>Пояснение</h2><p>' + esc(q.explanation) + '</p></section>' : '') +
+    '<nav class="navigation" aria-label="Перелистывание">' +
+    (position > 0 ? button('← Назад',action(position-1),'quiet') : '') +
+    (position+1 < total ? button('Далее →',action(position+1)) : button('К истории','history')) + '</nav></section>';
+  window.scrollTo({top:0});
 }
 function renderExamMistakes() {
   const cards = lastExamResult.mistakes.map(({id, picked}) => {
@@ -225,7 +245,7 @@ function sources() {
 app.addEventListener('click', e => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
-  if (action.startsWith('attempt-')) return renderAttempt(Number(action.slice(8)));
+  if (action.startsWith('attempt-')) return renderAttempt(...action.slice(8).split('-').map(Number));
   const actions = {
     history:renderHistory, home:renderHome, topics:renderTopics, marathon:()=>startPractice(bank.filter(q=>q.hard),'Марафон',true),
     mistakes:()=>startPractice(state.mistakes.map(find).filter(Boolean),'Мои ошибки'),
