@@ -1,16 +1,9 @@
+import { readProgress } from './progress.js';
 import { makeExam, gradeMain, makeExtra } from './engine.js';
 const app = document.querySelector('#app');
 const KEY = 'gibdd-progress-v1';
 let bank, research, session = null, savingAvailable = true;
 let state = { mistakes: [], solved: [], history: [], marathon: null, exam: null };
-try {
-  const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-  if (saved && typeof saved === 'object') {
-    for (const key of ['mistakes','solved','history']) if (Array.isArray(saved[key])) state[key] = saved[key];
-    state.marathon = saved.marathon || null;
-    state.exam = saved.exam || null;
-  }
-} catch { savingAvailable = false; }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch { savingAvailable = false; }
@@ -118,7 +111,7 @@ function confirmAnswer() {
   session.answers[q.id] = session.selected;
   session.selected = null;
   const answeredErrors = session.ids.filter(id => session.answers[id] !== undefined && session.answers[id] !== find(id).correct);
-  if ((session.phase === 'extra' && answeredErrors.length) || (session.phase === 'main' && (answeredErrors.length >= 3 || new Set(answeredErrors.map(id => find(id).group)).size !== answeredErrors.length))) return finishExam(false);
+  if ((session.phase === 'extra' && answeredErrors.length) || (session.phase === 'main' && (answeredErrors.length >= 3 || new Set(answeredErrors.map(id => find(id).group)).size !== answeredErrors.length))) return finishExam(false, false);
   if (session.ids.every(id => session.answers[id] !== undefined)) return endPhase();
   session.index = session.ids.findIndex(id => session.answers[id] === undefined);
   checkpoint(); renderQuestion();
@@ -137,14 +130,18 @@ function endPhase() {
   session.title = 'Дополнительные вопросы';
   checkpoint(); renderQuestion();
 }
-function finishExam(passed) {
+function finishExam(passed, countUnanswered = true) {
   const all = [...new Set([...session.mainIds,...session.ids])];
-  const errors = all.filter(id => session.answers[id] !== find(id).correct);
-  all.forEach(id => record(find(id),session.answers[id]));
-  state.history.push({at:Date.now(),passed,errors:errors.length});
+  const ended=Math.min(Date.now(),session.deadline);
+  const elapsed=Math.max(0,Math.floor((ended-session.started)/1000));
+  const assessed = all.filter(id => countUnanswered || session.answers[id] !== undefined ||
+    (session.phase === 'extra' && session.mainIds.includes(id)));
+  const errors = assessed.filter(id => session.answers[id] !== find(id).correct);
+  assessed.forEach(id => record(find(id),session.answers[id]));
+  state.history.push({at:ended,passed,errors:errors.length});
   state.history = state.history.slice(-100);
   state.exam = null; save(); session = null;
-  app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' + (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + errors.length + '.</p>' + button('К режимам','home') + '</section><h2>Разбор вопросов</h2>' + errors.map(id => {
+  app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' + (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + errors.length + '. Время: ' + Math.floor(elapsed/60) + ' мин ' + elapsed%60 + ' с.</p>' + button('К режимам','home') + '</section><h2>Разбор вопросов</h2>' + errors.map(id => {
     const q=find(id);
     return '<details><summary>Билет '+q.ticket+' · вопрос '+q.number+' — '+esc(q.question)+'</summary>' + (q.image ? '<img class="scene" src="./'+esc(q.image)+'" alt="Дорожная ситуация">' : '') + '<p><strong>Правильный ответ</strong> '+esc(q.answers[q.correct])+'</p><p>'+esc(q.explanation)+'</p></details>';
   }).join('');
@@ -158,7 +155,14 @@ function tick() {
 }
 function sources() {
   session = null;
-  app.innerHTML='<p class="eyebrow">Исследование · 17 ноября 2026</p><h1>Почему эти вопросы</h1><p>'+research.selectionCount+' вопросов — объединение подборки PDD-EXAM (100) и Дрома (19), с удалением '+research.overlap+' совпадений по номеру билета и вопроса.</p><p>На форумах и в комментариях повторяются затруднения с формулировками, траекториями и похожими ситуациями. Эти наблюдения использованы для выбора формата объяснений. Частота обсуждения сама по себе не определяет сложность.</p><p>Проценты ниже опубликованы PDD-EXAM для своей аудитории. Метод подсчёта, независимость ответов и размер выборки по каждому вопросу не проверены. Это ориентир внутри одного источника.</p><table><thead><tr><th>Билет / вопрос</th><th>Ошибки по источнику</th></tr></thead><tbody>'+research.top10.map(x=>'<tr><td>'+esc(x.id.replace('-',' / '))+'</td><td>'+x.errorPercent+'%</td></tr>').join('')+'</tbody></table><h2>Сложные вопросы по темам</h2><p class="muted">Число отобранных вопросов показывает состав подборки. У вопроса может быть несколько тем.</p>'+Object.entries(research.byTopic).map(([t,n])=>'<p>'+esc(t)+' — '+n+'</p>').join('')+'<h2>Материалы</h2><p><a href="https://pdd-exam.ru/diff/100/" target="_blank" rel="noopener">PDD-EXAM — подборка 100</a><br><a href="https://www.drom.ru/pdd/themes/hard/" target="_blank" rel="noopener">Дром — подборка 19</a><br><a href="https://www.drom.ru/pdd/comments/page3.html" target="_blank" rel="noopener">Обсуждения учеников</a><br><a href="https://www.consultant.ru/document/cons_doc_LAW_380236/f8d7876883620f8f1511a9ca70054b464f2f2619/" target="_blank" rel="noopener">Приказ МВД №80, порядок экзамена</a></p><p>Банк и иллюстрации взяты из <a href="https://github.com/chibsaabji/PDD-2026">PDD-2026</a>, снимок от 31 июля 2026, лицензия MIT. Репозиторий использует материалы etspring/pdd_russia. Полная сверка с официальным банком Госавтоинспекции ещё не завершена.</p><p><a href="./THIRD-PARTY-LICENSE.txt">Лицензия материалов</a></p>'+button('К режимам','home');
+  const entries=bank.filter(q=>q.hard).map(q=>{
+    const links=q.evidence.map(key=>key==='drom'
+      ? '<a href="https://www.drom.ru/pdd/themes/hard/">Подборка Дрома</a>'
+      : '<a href="https://pdd-exam.ru/diff/100/">Подборка по ответам PDD-EXAM</a>');
+    const stat=research.top10.find(x=>x.id===q.id);
+    return '<li>Билет '+q.ticket+', вопрос '+q.number+' · '+esc(q.topics.join(', '))+' — '+links.join('; ')+(stat?' · ошибок на PDD-EXAM: '+stat.errorPercent+'%':'')+'</li>';
+  }).join('');
+  app.innerHTML='<p class="eyebrow">Исследование · 17 ноября 2026</p><h1>Почему эти вопросы</h1><p>'+research.selectionCount+' вопросов — объединение подборки PDD-EXAM (100) и Дрома (19), с удалением '+research.overlap+' совпадений по номеру билета и вопроса.</p><p>На форумах и в комментариях повторяются затруднения с формулировками, траекториями и похожими ситуациями. Эти наблюдения использованы для выбора формата объяснений. Частота обсуждения сама по себе не определяет сложность.</p><p>Проценты ниже опубликованы PDD-EXAM для своей аудитории. Метод подсчёта, независимость ответов и размер выборки по каждому вопросу не проверены. Это ориентир внутри одного источника.</p><table><thead><tr><th>Билет / вопрос</th><th>Ошибки по источнику</th></tr></thead><tbody>'+research.top10.map(x=>'<tr><td>'+esc(x.id.replace('-',' / '))+'</td><td>'+x.errorPercent+'%</td></tr>').join('')+'</tbody></table><h2>Сложные вопросы по темам</h2><p class="muted">Число отобранных вопросов показывает состав подборки. У вопроса может быть несколько тем.</p>'+Object.entries(research.byTopic).map(([t,n])=>'<p>'+esc(t)+' — '+n+'</p>').join('')+'<details><summary>Основания отбора всех '+research.selectionCount+' вопросов</summary><p>Снимок от 17 ноября. Размер выборки для отдельного вопроса не опубликован.</p><ol>'+entries+'</ol></details><h2>Что вызывает затруднения</h2><p><a href="https://www.drom.ru/pdd/bilet_5/vopros_1/">Билет 5, вопрос 1: обсуждение на Дроме</a>. Ученики принимают двойную сплошную за разделительную полосу. Это наблюдение из комментариев, а не отдельная статистика ошибок.</p><h2>Материалы</h2><p><a href="https://pdd-exam.ru/diff/100/" target="_blank" rel="noopener">PDD-EXAM — подборка 100</a><br><a href="https://www.drom.ru/pdd/themes/hard/" target="_blank" rel="noopener">Дром — подборка 19</a><br><a href="https://www.drom.ru/pdd/comments/page3.html" target="_blank" rel="noopener">Обсуждения учеников</a><br><a href="https://www.consultant.ru/document/cons_doc_LAW_380236/f8d7876883620f8f1511a9ca70054b464f2f2619/" target="_blank" rel="noopener">Приказ МВД №80, порядок экзамена</a></p><p>Банк и иллюстрации взяты из <a href="https://github.com/chibsaabji/PDD-2026">PDD-2026</a>, снимок от 31 июля 2026, лицензия MIT. Репозиторий использует материалы etspring/pdd_russia. Полная сверка с официальным банком Госавтоинспекции ещё не завершена.</p><p><a href="./THIRD-PARTY-LICENSE.txt">Лицензия материалов</a></p>'+button('К режимам','home');
 }
 app.addEventListener('click', e => {
   const action = e.target.closest('[data-action]')?.dataset.action;
@@ -177,9 +181,10 @@ app.addEventListener('change', async e=>{
   if(e.target.id!=='import'||!e.target.files[0])return;
   try {
     const imported=JSON.parse(await e.target.files[0].text());
-    if(imported.version!==1||!Array.isArray(imported.mistakes)||!Array.isArray(imported.solved))throw Error();
-    state.mistakes=[...new Set(imported.mistakes.filter(id=>find(id)))];
-    state.solved=[...new Set(imported.solved.filter(id=>find(id)))];
+    if(imported.version!==1)throw Error();
+    const restored=readProgress(imported,bank);
+    if(!confirm('Заменить текущий прогресс данными из резервной копии?'))return;
+    state=restored;
     save();renderHome();
   } catch {alert('Не удалось прочитать файл прогресса. Выбери файл экспорта этого тренажёра.');}
 });
@@ -190,9 +195,20 @@ try {
   const responses=await Promise.all([fetch('./questions.json'),fetch('./research.json')]);
   if(responses.some(r=>!r.ok))throw Error();
   [bank,research]=await Promise.all(responses.map(r=>r.json()));
+  let saved;
+  try { saved=localStorage.getItem(KEY); } catch { savingAvailable=false; }
+  if(saved) {
+    try { state=readProgress(JSON.parse(saved),bank); }
+    catch { alert('Сохранённый прогресс не удалось прочитать. Можно восстановить резервную копию.'); }
+  }
   renderHome();
   setInterval(tick,500);
   document.addEventListener('visibilitychange',tick);
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{document.querySelector('#offline').textContent='Офлайн пока недоступен';});
-  navigator.serviceWorker?.addEventListener('message',e=>{if(e.data==='offline-ready')document.querySelector('#offline').textContent='Готово для занятий без интернета';});
+  if('serviceWorker' in navigator) {
+    const offline=document.querySelector('#offline');
+    navigator.serviceWorker.register('./sw.js').then(async()=>{
+      await navigator.serviceWorker.ready;
+      offline.textContent='Готово для занятий без интернета';
+    }).catch(()=>{offline.textContent='Офлайн пока недоступен';});
+  }
 } catch {app.innerHTML='<h1>Не удалось загрузить вопросы</h1><p>Проверь подключение и обнови страницу.</p>';}
