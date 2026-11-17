@@ -60,7 +60,10 @@ function renderQuestion() {
       return '<button class="' + cls + '" data-answer="' + i + '" ' + (picked !== undefined || session.feedback ? 'disabled' : '') + '><span class="letter">' + (i + 1) + '</span><span>' + esc(a) + '</span></button>';
     }).join('') + '</div>' +
     (isExam ? '<div class="panel row">' + button('Подтвердить ответ','confirm') + button('Пропустить','skip','quiet') + '</div><div class="navigation">' + session.ids.map((id,i) => '<button aria-label="Вопрос ' + (i+1) + '" class="dot ' + (session.answers[id] !== undefined ? 'answered ' : '') + (i === session.index ? 'active' : '') + '" data-index="' + i + '">' + (i+1) + '</button>').join('') + '</div>' + button('Завершить досрочно','end-exam','quiet') :
-      session.feedback ? '<section class="explanation"><h2>' + (picked === q.correct ? 'Верно' : 'Разберём ошибку') + '</h2><p>' + esc(q.explanation) + '</p>' + button('Следующий вопрос','next') + '</section>' : '') + '</section>';
+      session.feedback ? '<section class="explanation' + (picked === q.correct ? ' success' : '') + '"><h2>' +
+        (picked === q.correct ? 'Верно' : 'Неверно') + '</h2>' +
+        (picked === q.correct ? '' : '<p><strong>Правильный ответ:</strong> ' + esc(q.answers[q.correct]) + '</p><p>' + esc(q.explanation) + '</p>') +
+        button(session.index === session.ids.length - 1 ? 'Посмотреть результат' : 'Следующий вопрос','next') + '</section>' : '') + '</section>';
   app.querySelectorAll('[data-answer]').forEach(el => el.onclick = () => answer(+el.dataset.answer));
   app.querySelectorAll('[data-index]').forEach(el => el.onclick = () => { session.index = +el.dataset.index; session.selected = null; checkpoint(); renderQuestion(); });
   if (isExam) { app.querySelector('[data-action="confirm"]').disabled = session.selected == null || picked !== undefined; tick(); }
@@ -77,8 +80,10 @@ function answer(picked) {
   if (session.mode === 'exam') { session.selected = picked; renderQuestion(); return; }
   session.answers[q.id] = picked;
   record(q,picked);
-  if (picked === q.correct) next();
-  else { session.feedback = true; checkpoint(); renderQuestion(); }
+  session.feedback = true;
+  checkpoint();
+  renderQuestion();
+  app.querySelector('.explanation').scrollIntoView({block:'nearest'});
 }
 function next() {
   session.index++;

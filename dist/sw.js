@@ -1,5 +1,5 @@
 const PREFIX='gibdd:'+self.registration.scope+':';
-const CACHE=PREFIX+'893c1627c2246e6230b9';
+const CACHE=PREFIX+'ab4c0b476cc4447a607d';
 const CORE=['./','./index.html','./style.css','./app.js','./engine.js','./progress.js','./THIRD-PARTY-LICENSE.txt','./questions.json','./research.json','./manifest.webmanifest','./icon.png','./icon-512.png'];
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
