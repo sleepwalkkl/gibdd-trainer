@@ -2,5 +2,13 @@
 
 .explanation.success{background:#dfefdc;border-left-color:#61985c}
 
-footer{position:relative}
-.easter-egg{position:absolute;right:12px;bottom:2px;color:#9ca79b;font-size:11px;transform:rotate(-8deg);pointer-events:none;user-select:none}
+.easter-egg{
+  display:inline-block;
+  margin-left:6px;
+  color:#58715d;
+  font:700 15px/1 system-ui,sans-serif;
+  letter-spacing:0;
+  vertical-align:super;
+  transform:rotate(-8deg);
+  user-select:none;
+}
