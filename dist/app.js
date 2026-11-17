@@ -176,8 +176,10 @@ function renderHistory() {
   const entries = state.history.map((entry, index) => {
     const title = 'Попытка ' + (index+1) + ' · ' + new Date(entry.at).toLocaleString('ru-RU') +
       ' · ' + (entry.passed ? 'Сдал' : 'Не сдал') + ' · ошибок и пропусков: ' + entry.errors;
-    return '<li>' + (entry.questions ? button(title,'attempt-' + index,'quiet') :
-      esc(title) + ' · Сохранён только результат') + '</li>';
+    const detail = entry.questions
+      ? button('Открыть экзамен', 'attempt-' + index)
+      : '<p class="muted">Сохранён только итог. В этой записи нет вопросов и ваших ответов.</p>';
+    return '<li class="panel"><h2>' + esc(title) + '</h2>' + detail + '</li>';
   }).reverse();
   app.innerHTML = '<h1>История экзаменов</h1>' + button('К режимам','home','quiet') +
     (entries.length ? '<ul class="attempt-list">' + entries.join('') + '</ul>' : '<p>Здесь появятся завершённые экзамены.</p>');
