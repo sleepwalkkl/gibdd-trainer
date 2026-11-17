@@ -12,3 +12,5 @@
   transform:rotate(-8deg);
   user-select:none;
 }
+
+.attempt-list{list-style:none;padding:0}.attempt-list li{margin:12px 0}.attempt-list button{text-align:left}

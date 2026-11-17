@@ -15,7 +15,17 @@ export function readProgress(data, bank) {
   check(Array.isArray(data.history) && data.history.length <= 100);
   const history = data.history.map(h => {
     check(obj(h) && time(h.at) && typeof h.passed === 'boolean' && integer(h.errors,0,30));
-    return {at:h.at, passed:h.passed, errors:h.errors};
+    const entry = {at:h.at, passed:h.passed, errors:h.errors};
+    if (h.questions === undefined) return entry; // Ранние версии сохраняли только итог.
+    check(Array.isArray(h.questions) && [20,25,30].includes(h.questions.length));
+    ids(h.questions.map(row => row.id));
+    entry.questions = h.questions.map(({id,picked,assessed}) => {
+      check(typeof assessed === 'boolean' && (picked === null ||
+        (assessed && integer(picked,0,byId.get(id).answers.length-1))));
+      return {id,picked,assessed};
+    });
+    check(entry.questions.filter(row => row.assessed && row.picked !== byId.get(row.id).correct).length === entry.errors);
+    return entry;
   });
   function restore(s, exam) {
     if (s === null) return null;
