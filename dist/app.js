@@ -1,8 +1,15 @@
+import { randomUnit, drawPractice, readSelection, trainingTopics } from './selection.js';
 import { readProgress } from './progress.js';
 import { makeExam, gradeMain, makeExtra } from './engine.js';
 const app = document.querySelector('#app');
 const KEY = 'gibdd-progress-v1';
 let lastExamResult;
+const DRAW_KEY = 'gibdd-selection-v1';
+let selection;
+function saveSelection() {
+  try { localStorage.setItem(DRAW_KEY,JSON.stringify(selection)); }
+  catch { savingAvailable = false; }
+}
 let bank, research, session = null, savingAvailable = true;
 let state = { mistakes: [], solved: [], history: [], marathon: null, exam: null };
 function save() {
@@ -79,7 +86,7 @@ function renderHome() {
   const learned = hard.filter(q => state.solved.includes(q.id) && !state.mistakes.includes(q.id)).length;
   app.innerHTML = '<section class="hero"><p class="eyebrow">Сложные вопросы ПДД</p><h1>Разберись в том,<br>где чаще ошибаются.</h1><p class="muted">Практика по темам, длинная дистанция и проверка в условиях экзамена.</p></section>' +
     '<div class="metrics"><div><strong>' + hard.length + '</strong>в подборке</div><div><strong>' + learned + '</strong>разобрано</div><div><strong>' + state.mistakes.length + '</strong>к повторению</div></div>' +
-    '<section class="cards"><article class="card featured"><span class="tag">По темам</span><h2>Тесты</h2><p>Выбери тему и разберись со сложными ситуациями.</p>' + button('Выбрать тему','topics') + '</article><article class="card"><span class="tag">' + hard.length + ' вопросов</span><h2>Марафон</h2><p>Вся подборка подряд. Можно остановиться и продолжить позже.</p>' + button(state.marathon ? 'Продолжить марафон' : 'Начать марафон','marathon') + '</article><article class="card"><span class="tag">20 вопросов · 20 минут</span><h2>Экзамен</h2><p>Полный банк, случайные блоки и дополнительные вопросы за ошибки.</p>' + button(state.exam ? 'Продолжить экзамен' : 'К экзамену','exam-info') + '</article></section>' +
+    '<section class="cards"><article class="card featured"><span class="tag">800 вопросов · по темам</span><h2>Тесты</h2><p>Выбери тему и разберись со сложными ситуациями.</p>' + button('Выбрать тему','topics') + '</article><article class="card"><span class="tag">' + hard.length + ' вопросов</span><h2>Марафон</h2><p>Вся подборка подряд. Можно остановиться и продолжить позже.</p>' + button(state.marathon ? 'Продолжить марафон' : 'Начать марафон','marathon') + '</article><article class="card"><span class="tag">20 вопросов · 20 минут</span><h2>Экзамен</h2><p>Полный банк, случайные блоки и дополнительные вопросы за ошибки.</p>' + button(state.exam ? 'Продолжить экзамен' : 'К экзамену','exam-info') + (state.exam ? button('Новая попытка','new-exam','quiet') : '') + '</article></section>' +
     '<section class="panel row"><div><h2>Закрепи результат</h2><p class="muted">Вернись к вопросам, в которых ошибся.</p></div>' + button('Повторить ошибки','mistakes','quiet') + '</section>' +
     '<p class="notice">Банк AB — 800 вопросов. Проверка редакции на 2026 год продолжается. Подборка сложности проверена 17 ноября 2026.</p>' +
     (!savingAvailable ? '<p role="alert">Браузер не разрешает сохранять прогресс. Экспортируй его перед закрытием.</p>' : '') +
@@ -88,12 +95,23 @@ function renderHome() {
 }
 function renderTopics() {
   rememberView('topics');
-  const topics = [...new Set(bank.filter(q => q.hard).flatMap(q => q.topics))].sort();
-  app.innerHTML = '<p class="eyebrow">Тематическая практика</p><h1>Выбери тему</h1><div class="topics">' + topics.map((t,i) => '<button class="topic" data-topic="' + i + '">' + esc(t) + '<span>' + bank.filter(q => q.hard && q.topics.includes(t)).length + '</span></button>').join('') + '</div>';
-  app.querySelectorAll('[data-topic]').forEach(el => el.onclick = () => startPractice(bank.filter(q => q.hard && q.topics.includes(topics[+el.dataset.topic])), topics[+el.dataset.topic]));
+  const topics = trainingTopics(bank);
+  app.innerHTML = '<p class="eyebrow">Тематическая практика</p><h1>Выбери тему</h1>' +
+    '<p class="muted">Все темы банка из 800 вопросов. В тесте до 20 вопросов: сначала те, которые встречались реже. В конце круга тест может быть короче.</p>' +
+    '<div class="topics">' + topics.map((t,i) => '<button class="topic" data-topic="' + i + '">' +
+      esc(t.title) + '<span>' + t.questions.length + '</span></button>').join('') + '</div>';
+  app.querySelectorAll('[data-topic]').forEach(el => el.onclick = () => {
+    const chosen = topics[+el.dataset.topic];
+    startPractice(chosen.questions,chosen.title);
+  });
 }
 function startPractice(questions, title, marathon = false) {
   if (!questions.length) { app.innerHTML = '<section class="empty"><h1>Ошибок пока нет</h1><p>Начни тест или марафон — вопросы для повторения появятся здесь.</p>' + button('К режимам','home') + '</section>'; return; }
+  if (!marathon) {
+    questions = drawPractice(questions,selection.practice);
+    for (const q of questions) selection.practice[q.id] = (selection.practice[q.id] || 0) + 1;
+    saveSelection();
+  }
   session = { mode:'practice', ids:questions.map(q => q.id), index:0, answers:{}, title, marathon, feedback:false };
   if (marathon && state.marathon && state.marathon.ids.every(id => find(id))) {
     session = { ...session, ...state.marathon, feedback:false };
@@ -172,7 +190,9 @@ function examInfo() {
   app.innerHTML = '<section class="panel"><p class="eyebrow">Экзамен · категория B</p><h1>Проверь готовность</h1><p>20 вопросов за 20 минут. Билет состоит из четырёх случайных блоков по пять вопросов. Выбирай вопросы в любом порядке и подтверждай каждый ответ.</p><p>Одна ошибка — ещё 5 вопросов за 5 минут. Две ошибки в разных блоках — 10 вопросов за 10 минут. Две ошибки в одном блоке, три ошибки в билете или ошибка в дополнительном блоке завершают экзамен.</p><p>Пропущенный вопрос по окончании времени считается ошибкой. Пояснения будут доступны после результата. Таймер продолжает идти при закрытии страницы.</p>' + button('Начать экзамен','start-exam') + '</section>';
 }
 function startExam() {
-  const exam = makeExam(bank);
+  const exam = makeExam(bank,randomUnit,selection.exam);
+  exam.tickets.forEach((ticket,group)=>selection.exam[group][ticket-1]++);
+  saveSelection();
   session = { mode:'exam', phase:'main', ids:exam.questions.map(q => q.id), tickets:exam.tickets, mainIds:exam.questions.map(q => q.id), answers:{}, index:0, selected:null, deadline:Date.now()+1200000, started:Date.now(), title:'Экзамен' };
   checkpoint(); renderQuestion();
 }
@@ -196,7 +216,7 @@ function endPhase() {
   const grade = gradeMain(session.mainIds.map(find),session.answers);
   if (grade.failed) return finishExam(false);
   if (!grade.errors.length) return finishExam(true);
-  const extra = makeExtra(bank,grade.groups,session.tickets);
+  const extra = makeExtra(bank,grade.groups,session.tickets,randomUnit);
   session.phase = 'extra'; session.ids = extra.map(q => q.id); session.index = 0;
   session.selected = null; session.deadline = Math.min(Date.now(), session.deadline)+grade.errors.length*300000;
   session.title = 'Дополнительные вопросы';
@@ -228,7 +248,7 @@ function renderExamResult() {
   app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' +
     (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + mistakes.length +
     '. Время: ' + Math.floor(elapsed/60) + ' мин ' + elapsed%60 + ' с.</p>' +
-    button('К режимам','home') + ' ' + button('Мои ошибки','exam-mistakes','quiet') + ' ' +
+    button('Новый экзамен','start-exam') + ' ' + button('К режимам','home','quiet') + ' ' + button('Мои ошибки','exam-mistakes','quiet') + ' ' +
     button('Посмотреть экзамен','attempt-' + (state.history.length-1),'quiet') + '</section>';
 }
 function questionReview(id, picked) {
@@ -323,7 +343,8 @@ app.addEventListener('click', e => {
     history:renderHistory, home:renderHome, topics:renderTopics, marathon:()=>startPractice(bank.filter(q=>q.hard),'Марафон',true),
     mistakes:()=>startPractice(state.mistakes.map(find).filter(Boolean),'Мои ошибки'),
     'exam-mistakes':renderExamMistakes,'exam-result':renderExamResult,
-    'exam-info':examInfo,'start-exam':startExam,confirm:confirmAnswer,next,
+    'exam-info':examInfo,'start-exam':startExam,
+    'new-exam':()=>{if(confirm('Начать новый экзамен? Незаконченная попытка будет заменена.'))startExam();},confirm:confirmAnswer,next,
     skip:()=>{session.index=(session.index+1)%session.ids.length;session.selected=null;checkpoint();renderQuestion();},
     'end-exam':()=>{if(confirm('Завершить экзамен? Неотвеченные вопросы будут считаться ошибками.'))finishExam(false);},
     export:()=>{const url=URL.createObjectURL(new Blob([JSON.stringify({version:1,...state})],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='gibdd-progress.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -354,6 +375,9 @@ try {
     try { state=readProgress(JSON.parse(saved),bank); }
     catch { alert('Сохранённый прогресс не удалось прочитать. Можно восстановить резервную копию.'); }
   }
+  let savedSelection;
+  try { savedSelection=JSON.parse(localStorage.getItem(DRAW_KEY) || 'null'); } catch {}
+  selection=readSelection(savedSelection,bank,state.history);
   if (!restoreView()) renderHome();
   setInterval(tick,500);
   document.addEventListener('visibilitychange', () => { persistView(); save(); tick(); });

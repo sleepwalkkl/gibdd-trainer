@@ -30,3 +30,5 @@ await import('./cache-version.mjs');
 await import('./sessions-check.mjs');
 
 await import("./view-check.mjs");
+
+await import("./selection-check.mjs");
