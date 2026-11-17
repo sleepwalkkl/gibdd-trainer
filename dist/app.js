@@ -12,7 +12,68 @@ function save() {
 const esc = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const find = id => bank.find(q => q.id === id);
 const button = (text, action, className = '') => '<button class="' + className + '" data-action="' + action + '">' + esc(text) + '</button>';
+const VIEW_KEY = 'gibdd-view-v1';
+let currentView = {name:'home', args:[]};
+function rememberView(name, ...args) {
+  currentView = {name, args};
+  persistView();
+}
+function persistView() {
+  try {
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify({
+      ...currentView, session:currentView.name === 'question' ? session : null,
+      result:lastExamResult, scrollY:window.scrollY
+    }));
+  } catch { /* Занятия доступны и при запрете хранилища. */ }
+}
+function restoreView() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null');
+    if (!saved) return false;
+    if (saved.name === 'question') {
+      const active = saved.session;
+      if (!active || !Array.isArray(active.ids) || !active.ids.length ||
+          !Number.isInteger(active.index) || active.index < 0 || active.index >= active.ids.length ||
+          !active.ids.every(id => find(id)) || !active.answers || typeof active.answers !== 'object') return false;
+      if (active.mode === 'exam') {
+        // Проверяем сессию тем же валидатором, что и резервную копию.
+        session = readProgress({...state, exam:active}, bank).exam;
+        const q = find(session.ids[session.index]);
+        if (Number.isInteger(active.selected) && active.selected >= 0 && active.selected < q.answers.length)
+          session.selected = active.selected;
+      } else {
+        if (active.mode !== 'practice' || typeof active.title !== 'string' ||
+            !Object.entries(active.answers).every(([id,answer]) =>
+              active.ids.includes(id) && Number.isInteger(answer) && answer >= 0 && answer < find(id).answers.length))
+          return false;
+        session = active;
+        session.feedback = session.answers[session.ids[session.index]] !== undefined;
+      }
+      renderQuestion();
+    } else {
+      const screens = {home:renderHome, topics:renderTopics, sources, history:renderHistory,
+        'exam-info':examInfo, attempt:renderAttempt, 'exam-result':renderExamResult,
+        'exam-mistakes':renderExamMistakes};
+      if (!screens[saved.name] || !Array.isArray(saved.args)) return false;
+      if (saved.name === 'attempt') {
+        const [index,position] = saved.args;
+        if (!Number.isInteger(index) || !Number.isInteger(position) ||
+            !state.history[index]?.questions?.[position]) return false;
+      }
+      if (saved.name === 'exam-result' || saved.name === 'exam-mistakes') {
+        if (!saved.result || !Array.isArray(saved.result.mistakes) ||
+            !saved.result.mistakes.every(row => find(row.id))) return false;
+        lastExamResult = saved.result;
+      }
+      screens[saved.name](...saved.args);
+    }
+    if (Number.isFinite(saved.scrollY)) window.scrollTo({top:saved.scrollY});
+    return true;
+  } catch { return false; }
+}
+
 function renderHome() {
+  rememberView('home');
   session = null;
   const hard = bank.filter(q => q.hard);
   const learned = hard.filter(q => state.solved.includes(q.id) && !state.mistakes.includes(q.id)).length;
@@ -26,6 +87,7 @@ function renderHome() {
     '<p>' + button('История экзаменов','history','quiet') + '</p>';
 }
 function renderTopics() {
+  rememberView('topics');
   const topics = [...new Set(bank.filter(q => q.hard).flatMap(q => q.topics))].sort();
   app.innerHTML = '<p class="eyebrow">Тематическая практика</p><h1>Выбери тему</h1><div class="topics">' + topics.map((t,i) => '<button class="topic" data-topic="' + i + '">' + esc(t) + '<span>' + bank.filter(q => q.hard && q.topics.includes(t)).length + '</span></button>').join('') + '</div>';
   app.querySelectorAll('[data-topic]').forEach(el => el.onclick = () => startPractice(bank.filter(q => q.hard && q.topics.includes(topics[+el.dataset.topic])), topics[+el.dataset.topic]));
@@ -37,17 +99,20 @@ function startPractice(questions, title, marathon = false) {
     session = { ...session, ...state.marathon, feedback:false };
     if (session.answers[session.ids[session.index]] !== undefined) session.feedback = true;
   }
+  checkpoint();
   renderQuestion();
 }
 function checkpoint() {
   if (session.mode === 'exam') state.exam = session;
   if (session.marathon) state.marathon = session;
   save();
+  persistView();
 }
 function renderQuestion() {
   if (!session) return;
   const q = find(session.ids[session.index]);
   if (!q) return finishPractice();
+  rememberView('question');
   const isExam = session.mode === 'exam';
   const picked = session.answers[q.id];
   app.innerHTML = '<section class="question"><div class="row"><span class="eyebrow">' + esc(session.title) + '</span>' + (isExam ? '<span id="clock" class="time"></span>' : '<span>' + (session.index + 1) + ' / ' + session.ids.length + '</span>') + '</div><div class="progress"><span style="width:' + (100 * session.index / session.ids.length) + '%"></span></div>' +
@@ -102,6 +167,7 @@ function finishPractice() {
   app.innerHTML = '<section class="hero"><p class="eyebrow">Практика завершена</p><h1>' + right + ' из ' + total + '</h1><p>Ошибки сохранены для повторения.</p>' + button('К режимам','home') + ' ' + button('Повторить ошибки','mistakes','quiet') + '</section>';
 }
 function examInfo() {
+  rememberView('exam-info');
   if (state.exam) { session = state.exam; session.selected = null; renderQuestion(); return; }
   app.innerHTML = '<section class="panel"><p class="eyebrow">Экзамен · категория B</p><h1>Проверь готовность</h1><p>20 вопросов за 20 минут. Билет состоит из четырёх случайных блоков по пять вопросов. Выбирай вопросы в любом порядке и подтверждай каждый ответ.</p><p>Одна ошибка — ещё 5 вопросов за 5 минут. Две ошибки в разных блоках — 10 вопросов за 10 минут. Две ошибки в одном блоке, три ошибки в билете или ошибка в дополнительном блоке завершают экзамен.</p><p>Пропущенный вопрос по окончании времени считается ошибкой. Пояснения будут доступны после результата. Таймер продолжает идти при закрытии страницы.</p>' + button('Начать экзамен','start-exam') + '</section>';
 }
@@ -157,6 +223,7 @@ function finishExam(passed, countUnanswered = true) {
   renderExamResult();
 }
 function renderExamResult() {
+  rememberView('exam-result');
   const {passed, elapsed, mistakes} = lastExamResult;
   app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' +
     (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + mistakes.length +
@@ -173,6 +240,7 @@ function questionReview(id, picked) {
     (correct ? '' : '<p><strong>Правильный ответ:</strong> ' + esc(q.answers[q.correct]) + '</p><p>' + esc(q.explanation) + '</p>');
 }
 function renderHistory() {
+  rememberView('history');
   const entries = state.history.map((entry, index) => {
     const title = 'Попытка ' + (index+1) + ' · ' + new Date(entry.at).toLocaleString('ru-RU') +
       ' · ' + (entry.passed ? 'Сдал' : 'Не сдал') + ' · ошибок и пропусков: ' + entry.errors;
@@ -185,6 +253,7 @@ function renderHistory() {
     (entries.length ? '<ul class="attempt-list">' + entries.join('') + '</ul>' : '<p>Здесь появятся завершённые экзамены.</p>');
 }
 function renderAttempt(index, position = 0) {
+  rememberView('attempt', index, position);
   const entry = state.history[index];
   const {id, picked, assessed} = entry.questions[position];
   const q = find(id);
@@ -217,6 +286,7 @@ function renderAttempt(index, position = 0) {
   window.scrollTo({top:0});
 }
 function renderExamMistakes() {
+  rememberView('exam-mistakes');
   const cards = lastExamResult.mistakes.map(({id, picked}) => {
     const q = find(id);
     return '<article class="panel"><p class="eyebrow">Билет ' + q.ticket + ' · вопрос ' + q.number +
@@ -234,6 +304,7 @@ function tick() {
   if (!left) endPhase();
 }
 function sources() {
+  rememberView('sources');
   session = null;
   const entries=bank.filter(q=>q.hard).map(q=>{
     const links=q.evidence.map(key=>key==='drom'
@@ -283,9 +354,11 @@ try {
     try { state=readProgress(JSON.parse(saved),bank); }
     catch { alert('Сохранённый прогресс не удалось прочитать. Можно восстановить резервную копию.'); }
   }
-  renderHome();
+  if (!restoreView()) renderHome();
   setInterval(tick,500);
-  document.addEventListener('visibilitychange',tick);
+  document.addEventListener('visibilitychange', () => { persistView(); save(); tick(); });
+  window.addEventListener('pagehide', () => { persistView(); save(); });
+  window.addEventListener('pageshow', tick);
   if('serviceWorker' in navigator) {
     const offline=document.querySelector('#offline');
     navigator.serviceWorker.register('./sw.js').then(async()=>{

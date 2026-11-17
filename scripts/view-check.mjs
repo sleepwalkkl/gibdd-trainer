@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const bank = JSON.parse(readFileSync(new URL('../dist/questions.json',import.meta.url)));
+const json = path => JSON.parse(readFileSync(new URL('../dist/'+path,import.meta.url)));
+let progress = null, view = null, events = {}, lifecycle = {}, visibility, serial = 0;
+const answers = Array.from({length:5},(_,i)=>({dataset:{answer:i}}));
+const topic = {dataset:{topic:'0'}};
+const dom = {
+  innerHTML:'',
+  querySelector:()=>({scrollIntoView(){}}),
+  querySelectorAll:selector => selector === '[data-answer]' ? answers :
+    selector === '[data-topic]' ? [topic] : [],
+  addEventListener:(name,fn)=>events[name]=fn
+};
+globalThis.document = {querySelector:()=>dom, addEventListener:(name,fn)=>visibility=fn};
+globalThis.window = {scrollY:0,scrollTo(){}, addEventListener:(name,fn)=>lifecycle[name]=fn};
+globalThis.sessionStorage = {getItem:()=>view,setItem:(_,s)=>view=s};
+globalThis.localStorage = {getItem:()=>progress,setItem:(_,s)=>progress=s};
+globalThis.fetch = async path=>({ok:true,json:()=>json(path.slice(2))});
+globalThis.alert = ()=>{throw Error('Unexpected alert');};
+globalThis.confirm = ()=>true;
+const interval = globalThis.setInterval;
+globalThis.setInterval = ()=>0;
+const load = async()=>{await import('../dist/app.js?view-test='+serial++);};
+const click = action=>events.click({target:{closest:()=>({dataset:{action}})}});
+try {
+  await load();
+  click('topics');
+  topic.onclick();
+  answers[0].onclick();
+  let saved = JSON.parse(view);
+  assert.equal(saved.name,'question');
+  assert.equal(saved.session.mode,'practice');
+  assert.equal(saved.session.feedback,true);
+  const original = saved.session;
+  lifecycle.pagehide();
+  await load();
+  assert.deepEqual(JSON.parse(view).session, original);
+  assert.ok(dom.innerHTML.includes('Следующий вопрос'));
+  click('next');
+  const index = JSON.parse(view).session.index;
+  visibility();
+  await load();
+  assert.equal(JSON.parse(view).session.index,index);
+
+  click('home'); await load();
+  assert.ok(dom.innerHTML.includes('Разберись в том'));
+  click('start-exam');
+  const exam = JSON.parse(progress).exam;
+  answers[1].onclick(); lifecycle.pagehide();
+  await load();
+  saved = JSON.parse(view);
+  assert.equal(saved.session.selected,1);
+  assert.equal(saved.session.deadline,exam.deadline);
+  assert.ok(dom.innerHTML.includes('Подтвердить ответ'));
+
+  click('history'); await load();
+  assert.equal(JSON.parse(view).name,'history');
+  click('home'); click('marathon');
+  lifecycle.pagehide(); await load();
+  assert.equal(JSON.parse(view).session.marathon,true);
+
+  view = '{"name":"question","session":{"ids":["bad"],"index":0}}';
+  await load();
+  assert.equal(JSON.parse(view).name,'home');
+  console.log('Восстановление теста, ответа, марафона, экзамена и экрана после перезагрузки проверено.');
+} finally {
+  globalThis.setInterval = interval;
+}

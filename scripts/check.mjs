@@ -28,3 +28,5 @@ assert.equal(gradeMain(questions,answers).failed,true);
 console.log('Bank, assets, exam blocks, error rules and extra blocks verified');
 await import('./cache-version.mjs');
 await import('./sessions-check.mjs');
+
+await import("./view-check.mjs");
