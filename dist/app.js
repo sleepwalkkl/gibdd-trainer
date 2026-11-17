@@ -2,6 +2,7 @@ import { readProgress } from './progress.js';
 import { makeExam, gradeMain, makeExtra } from './engine.js';
 const app = document.querySelector('#app');
 const KEY = 'gibdd-progress-v1';
+let lastExamResult;
 let bank, research, session = null, savingAvailable = true;
 let state = { mistakes: [], solved: [], history: [], marathon: null, exam: null };
 function save() {
@@ -145,11 +146,34 @@ function finishExam(passed, countUnanswered = true) {
   assessed.forEach(id => record(find(id),session.answers[id]));
   state.history.push({at:ended,passed,errors:errors.length});
   state.history = state.history.slice(-100);
+  lastExamResult = {
+    passed, elapsed,
+    mistakes: errors.map(id => ({ id, picked: session.answers[id] }))
+  };
   state.exam = null; save(); session = null;
-  app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' + (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + errors.length + '. Время: ' + Math.floor(elapsed/60) + ' мин ' + elapsed%60 + ' с.</p>' + button('К режимам','home') + '</section><h2>Разбор вопросов</h2>' + errors.map(id => {
-    const q=find(id);
-    return '<details><summary>Билет '+q.ticket+' · вопрос '+q.number+' — '+esc(q.question)+'</summary>' + (q.image ? '<img class="scene" src="./'+esc(q.image)+'" alt="Дорожная ситуация">' : '') + '<p><strong>Правильный ответ</strong> '+esc(q.answers[q.correct])+'</p><p>'+esc(q.explanation)+'</p></details>';
-  }).join('');
+  renderExamResult();
+}
+function renderExamResult() {
+  const {passed, elapsed, mistakes} = lastExamResult;
+  app.innerHTML = '<section class="hero"><p class="eyebrow">Экзамен завершён</p><h1>' +
+    (passed ? 'Сдал' : 'Не сдал') + '</h1><p>Ошибок и пропусков — ' + mistakes.length +
+    '. Время: ' + Math.floor(elapsed/60) + ' мин ' + elapsed%60 + ' с.</p>' +
+    button('К режимам','home') + ' ' + button('Мои ошибки','exam-mistakes','quiet') + '</section>';
+}
+function renderExamMistakes() {
+  const cards = lastExamResult.mistakes.map(({id, picked}) => {
+    const q = find(id);
+    return '<article class="panel"><p class="eyebrow">Билет ' + q.ticket + ' · вопрос ' + q.number +
+      '</p><h2>' + esc(q.question) + '</h2>' +
+      (q.image ? '<img class="scene" src="./' + esc(q.image) + '" alt="Дорожная ситуация к вопросу">' : '') +
+      (picked === undefined ? '<p><strong>Вопрос пропущен</strong></p>' :
+        '<p><strong>Ваш ответ:</strong> ' + esc(q.answers[picked]) + '</p>') +
+      '<p><strong>Правильный ответ:</strong> ' + esc(q.answers[q.correct]) + '</p><p>' +
+      esc(q.explanation) + '</p></article>';
+  });
+  app.innerHTML = '<h1>Мои ошибки</h1>' + button('К результату','exam-result','quiet') + ' ' +
+    button('К режимам','home','quiet') +
+    (cards.length ? cards.join('') : '<p>Все вопросы этого экзамена решены верно.</p>');
 }
 function tick() {
   if (!session || session.mode !== 'exam') return;
@@ -175,6 +199,7 @@ app.addEventListener('click', e => {
   const actions = {
     home:renderHome, topics:renderTopics, marathon:()=>startPractice(bank.filter(q=>q.hard),'Марафон',true),
     mistakes:()=>startPractice(state.mistakes.map(find).filter(Boolean),'Мои ошибки'),
+    'exam-mistakes':renderExamMistakes,'exam-result':renderExamResult,
     'exam-info':examInfo,'start-exam':startExam,confirm:confirmAnswer,next,
     skip:()=>{session.index=(session.index+1)%session.ids.length;session.selected=null;checkpoint();renderQuestion();},
     'end-exam':()=>{if(confirm('Завершить экзамен? Неотвеченные вопросы будут считаться ошибками.'))finishExam(false);},
