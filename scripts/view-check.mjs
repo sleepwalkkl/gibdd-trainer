@@ -27,7 +27,9 @@ try {
   await load();
   click('topics');
   topic.onclick();
-  answers[0].onclick();
+  const first = JSON.parse(view).session;
+  const firstQuestion = bank.find(q=>q.id===first.ids[first.index]);
+  answers[(firstQuestion.correct+1)%firstQuestion.answers.length].onclick();
   let saved = JSON.parse(view);
   assert.equal(saved.name,'question');
   assert.equal(saved.session.mode,'practice');
@@ -42,6 +44,17 @@ try {
   visibility();
   await load();
   assert.equal(JSON.parse(view).session.index,index);
+  let active = JSON.parse(view).session;
+  let question = bank.find(q=>q.id===active.ids[active.index]);
+  answers[question.correct].onclick();
+  assert.equal(JSON.parse(view).session.index,index+1);
+  assert.equal(JSON.parse(view).session.feedback,false);
+  while (!dom.innerHTML.includes('Практика завершена')) {
+    active = JSON.parse(view).session;
+    question = bank.find(q=>q.id===active.ids[active.index]);
+    answers[question.correct].onclick();
+  }
+  assert.ok(dom.innerHTML.includes('Практика завершена'));
 
   click('home'); await load();
   assert.ok(dom.innerHTML.includes('Разберись в том'));
@@ -59,6 +72,10 @@ try {
   click('home'); click('marathon');
   lifecycle.pagehide(); await load();
   assert.equal(JSON.parse(view).session.marathon,true);
+  const marathon = JSON.parse(view).session;
+  const marathonQuestion = bank.find(q=>q.id===marathon.ids[marathon.index]);
+  answers[marathonQuestion.correct].onclick();
+  assert.equal(JSON.parse(view).session.index,marathon.index+1);
 
   view = '{"name":"question","session":{"ids":["bad"],"index":0}}';
   await load();

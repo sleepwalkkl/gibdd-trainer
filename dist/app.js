@@ -164,6 +164,7 @@ function answer(picked) {
   if (session.mode === 'exam') { session.selected = picked; renderQuestion(); return; }
   session.answers[q.id] = picked;
   record(q,picked);
+  if (picked === q.correct) return next();
   session.feedback = true;
   checkpoint();
   renderQuestion();
