@@ -21,7 +21,9 @@ const find = id => bank.find(q => q.id === id);
 const button = (text, action, className = '') => '<button class="' + className + '" data-action="' + action + '">' + esc(text) + '</button>';
 const VIEW_KEY = 'gibdd-view-v1';
 let currentView = {name:'home', args:[]};
+let advanceTimer;
 function rememberView(name, ...args) {
+  clearTimeout(advanceTimer);
   currentView = {name, args};
   persistView();
 }
@@ -150,6 +152,12 @@ function renderQuestion() {
         button(session.index === session.ids.length - 1 ? 'Посмотреть результат' : 'Следующий вопрос','next') + '</section>' : '') + '</section>';
   app.querySelectorAll('[data-answer]').forEach(el => el.onclick = () => answer(+el.dataset.answer));
   app.querySelectorAll('[data-index]').forEach(el => el.onclick = () => { session.index = +el.dataset.index; session.selected = null; checkpoint(); renderQuestion(); });
+  if (!isExam && session.feedback && picked === q.correct) {
+    const active = session, position = session.index;
+    advanceTimer = setTimeout(() => {
+      if (session === active && session.index === position && currentView.name === 'question') next();
+    }, 1000);
+  }
   if (isExam) { app.querySelector('[data-action="confirm"]').disabled = session.selected == null || picked !== undefined; tick(); }
 }
 function record(q, picked) {
@@ -164,7 +172,6 @@ function answer(picked) {
   if (session.mode === 'exam') { session.selected = picked; renderQuestion(); return; }
   session.answers[q.id] = picked;
   record(q,picked);
-  if (picked === q.correct) return next();
   session.feedback = true;
   checkpoint();
   renderQuestion();

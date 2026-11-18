@@ -20,6 +20,11 @@ globalThis.fetch = async path=>({ok:true,json:()=>json(path.slice(2))});
 globalThis.alert = ()=>{throw Error('Unexpected alert');};
 globalThis.confirm = ()=>true;
 const interval = globalThis.setInterval;
+const timeout = globalThis.setTimeout, cancelTimeout = globalThis.clearTimeout;
+let pending;
+globalThis.setTimeout = (fn, delay) => { assert.equal(delay,1000); pending=fn; return 1; };
+globalThis.clearTimeout = () => { pending=null; };
+const advance = () => { assert.ok(pending); const fn=pending; pending=null; fn(); };
 globalThis.setInterval = ()=>0;
 const load = async()=>{await import('../dist/app.js?view-test='+serial++);};
 const click = action=>events.click({target:{closest:()=>({dataset:{action}})}});
@@ -47,12 +52,17 @@ try {
   let active = JSON.parse(view).session;
   let question = bank.find(q=>q.id===active.ids[active.index]);
   answers[question.correct].onclick();
+  assert.equal(JSON.parse(view).session.index,index);
+  assert.ok(dom.innerHTML.includes(' correct'));
+  assert.ok(dom.innerHTML.includes('Верно'));
+  advance();
   assert.equal(JSON.parse(view).session.index,index+1);
   assert.equal(JSON.parse(view).session.feedback,false);
   while (!dom.innerHTML.includes('Практика завершена')) {
     active = JSON.parse(view).session;
     question = bank.find(q=>q.id===active.ids[active.index]);
     answers[question.correct].onclick();
+    advance();
   }
   assert.ok(dom.innerHTML.includes('Практика завершена'));
 
@@ -75,7 +85,17 @@ try {
   const marathon = JSON.parse(view).session;
   const marathonQuestion = bank.find(q=>q.id===marathon.ids[marathon.index]);
   answers[marathonQuestion.correct].onclick();
+  advance();
   assert.equal(JSON.parse(view).session.index,marathon.index+1);
+
+  const current = JSON.parse(view).session;
+  const correct = bank.find(q=>q.id===current.ids[current.index]).correct;
+  answers[correct].onclick();
+  const stale = pending;
+  click('home');
+  assert.equal(pending,null);
+  stale();
+  assert.ok(dom.innerHTML.includes('Разберись в том'));
 
   view = '{"name":"question","session":{"ids":["bad"],"index":0}}';
   await load();
@@ -83,4 +103,5 @@ try {
   console.log('Восстановление теста, ответа, марафона, экзамена и экрана после перезагрузки проверено.');
 } finally {
   globalThis.setInterval = interval;
+  globalThis.setTimeout = timeout; globalThis.clearTimeout = cancelTimeout;
 }
