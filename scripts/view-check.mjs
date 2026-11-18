@@ -22,7 +22,7 @@ globalThis.confirm = ()=>true;
 const interval = globalThis.setInterval;
 const timeout = globalThis.setTimeout, cancelTimeout = globalThis.clearTimeout;
 let pending;
-globalThis.setTimeout = (fn, delay) => { assert.equal(delay,1000); pending=fn; return 1; };
+globalThis.setTimeout = (fn, delay) => { assert.equal(delay,300); pending=fn; return 1; };
 globalThis.clearTimeout = () => { pending=null; };
 const advance = () => { assert.ok(pending); const fn=pending; pending=null; fn(); };
 globalThis.setInterval = ()=>0;

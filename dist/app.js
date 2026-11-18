@@ -156,7 +156,7 @@ function renderQuestion() {
     const active = session, position = session.index;
     advanceTimer = setTimeout(() => {
       if (session === active && session.index === position && currentView.name === 'question') next();
-    }, 1000);
+    }, 300);
   }
   if (isExam) { app.querySelector('[data-action="confirm"]').disabled = session.selected == null || picked !== undefined; tick(); }
 }
